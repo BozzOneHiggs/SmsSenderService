@@ -9,9 +9,8 @@ import com.google.firebase.firestore.FirebaseFirestore
 
 object SmsStatusSyncer {
 
-    fun sync(context: Context, callback: (Int) -> Unit) {
+    fun sync(context: Context, db: FirebaseFirestore, callback: (Int) -> Unit) {
         Log.d("SmsStatusSyncer", "Rozpoczynam synchronizację statusów...")
-        val db = FirebaseFirestore.getInstance()
         var updatedCount = 0
 
         db.collection("smsJobs")

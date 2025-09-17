@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.util.Log
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
@@ -62,11 +63,24 @@ class MainActivity : AppCompatActivity() {
                 statusTextView.text = "Rozpoczynam ręczną synchronizację..."
                 actionButton.isEnabled = false
                 CoroutineScope(Dispatchers.IO).launch {
-                    SmsStatusSyncer.sync(this@MainActivity) { updatedCount ->
-                        // Wróć do głównego wątku, aby zaktualizować UI
-                        launch(Dispatchers.Main) {
-                            statusTextView.text = "Synchronizacja zakończona. Zaktualizowano $updatedCount statusów."
+                    try {
+                        val firestore = FirebaseAuthManager.ensureSignedInWithCustomToken(this@MainActivity)
+                        SmsStatusSyncer.sync(this@MainActivity, firestore) { updatedCount ->
+                            runOnUiThread {
+                                statusTextView.text = "Synchronizacja zakończona. Zaktualizowano $updatedCount statusów."
+                                actionButton.isEnabled = true
+                            }
+                        }
+                    } catch (ex: Exception) {
+                        Log.e("MainActivity", "Błąd podczas ręcznej synchronizacji", ex)
+                        withContext(Dispatchers.Main) {
+                            statusTextView.text = getString(R.string.auth_error_message)
                             actionButton.isEnabled = true
+                            Toast.makeText(
+                                this@MainActivity,
+                                getString(R.string.auth_error_message),
+                                Toast.LENGTH_LONG
+                            ).show()
                         }
                     }
                 }

@@ -19,7 +19,9 @@ import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class SmsSenderService : Service() {
 
@@ -30,10 +32,12 @@ class SmsSenderService : Service() {
     private val syncHandler = Handler(Looper.getMainLooper())
     private lateinit var syncRunnable: Runnable
     private val SYNC_INTERVAL_MS = 60000L // Synchronizuj co 60 sekund
+    private val serviceJob = SupervisorJob()
+    private val serviceScope = CoroutineScope(serviceJob + Dispatchers.Main.immediate)
+    private var isSyncScheduled = false
 
     override fun onCreate() {
         super.onCreate()
-        db = FirebaseFirestore.getInstance()
         createNotificationChannel()
         setupPeriodicSync()
     }
@@ -41,19 +45,23 @@ class SmsSenderService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val notification = createNotification("Nasłuchiwanie na nowe zlecenia SMS...")
         startForeground(1, notification)
-        listenForSmsJobs()
-        // Uruchom okresową synchronizację
-        syncHandler.post(syncRunnable)
+        serviceScope.launch {
+            authenticateAndStartWork()
+        }
         return START_STICKY
     }
 
     private fun setupPeriodicSync() {
         syncRunnable = Runnable {
+            if (!::db.isInitialized) {
+                Log.w("SmsSenderService", "Brak instancji Firestore – pomijam synchronizację.")
+                syncHandler.postDelayed(syncRunnable, SYNC_INTERVAL_MS)
+                return@Runnable
+            }
             // Uruchom synchronizację w tle, aby nie blokować głównego wątku
-            CoroutineScope(Dispatchers.IO).launch {
+            serviceScope.launch(Dispatchers.IO) {
                 Log.d("SmsSenderService", "Uruchamiam okresową synchronizację statusów...")
-                // POPRAWKA: Dodajemy brakujący parametr 'callback'
-                SmsStatusSyncer.sync(this@SmsSenderService) { updatedCount ->
+                SmsStatusSyncer.sync(this@SmsSenderService, db) { updatedCount ->
                     Log.d("SmsSenderService", "Okresowa synchronizacja zakończona. Zaktualizowano: $updatedCount")
                 }
                 // Zaplanuj następne uruchomienie
@@ -63,6 +71,10 @@ class SmsSenderService : Service() {
     }
 
     private fun listenForSmsJobs() {
+        if (!::db.isInitialized) {
+            Log.w("SmsSenderService", "Firestore nie jest gotowy do nasłuchiwania zleceń.")
+            return
+        }
         if (firestoreListener != null) return
         updateNotification("Oczekuję na nowe zlecenia...")
         val query = db.collection("smsJobs")
@@ -160,9 +172,30 @@ class SmsSenderService : Service() {
         super.onDestroy()
         firestoreListener?.remove()
         syncHandler.removeCallbacks(syncRunnable)
+        isSyncScheduled = false
+        serviceJob.cancel()
     }
 
     override fun onBind(intent: Intent?): IBinder? {
         return null
+    }
+
+    private suspend fun authenticateAndStartWork() {
+        try {
+            val firestore = withContext(Dispatchers.IO) {
+                FirebaseAuthManager.ensureSignedInWithCustomToken(this@SmsSenderService)
+            }
+            if (!::db.isInitialized) {
+                db = firestore
+            }
+            listenForSmsJobs()
+            if (!isSyncScheduled) {
+                syncHandler.post(syncRunnable)
+                isSyncScheduled = true
+            }
+        } catch (ex: Exception) {
+            Log.e("SmsSenderService", "Błąd autoryzacji Firebase", ex)
+            updateNotification(getString(R.string.auth_error_message))
+        }
     }
 }

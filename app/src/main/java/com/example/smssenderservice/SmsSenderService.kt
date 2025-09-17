@@ -1,4 +1,4 @@
-package com.example.smssenderservice
+package com.example.smssenderservice // Zmień na swoją nazwę pakietu
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -7,7 +7,6 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -27,8 +26,6 @@ class SmsSenderService : Service() {
     private lateinit var db: FirebaseFirestore
     private var firestoreListener: ListenerRegistration? = null
     private val NOTIFICATION_CHANNEL_ID = "SmsSenderServiceChannel"
-    private val SENT_SMS_ACTION = "com.example.smssenderservice.SMS_SENT"
-    private val DELIVERED_SMS_ACTION = "com.example.smssenderservice.SMS_DELIVERED"
 
     private val syncHandler = Handler(Looper.getMainLooper())
     private lateinit var syncRunnable: Runnable
@@ -45,15 +42,21 @@ class SmsSenderService : Service() {
         val notification = createNotification("Nasłuchiwanie na nowe zlecenia SMS...")
         startForeground(1, notification)
         listenForSmsJobs()
+        // Uruchom okresową synchronizację
         syncHandler.post(syncRunnable)
         return START_STICKY
     }
 
     private fun setupPeriodicSync() {
         syncRunnable = Runnable {
+            // Uruchom synchronizację w tle, aby nie blokować głównego wątku
             CoroutineScope(Dispatchers.IO).launch {
                 Log.d("SmsSenderService", "Uruchamiam okresową synchronizację statusów...")
-                SmsStatusSyncer.sync(this@SmsSenderService)
+                // POPRAWKA: Dodajemy brakujący parametr 'callback'
+                SmsStatusSyncer.sync(this@SmsSenderService) { updatedCount ->
+                    Log.d("SmsSenderService", "Okresowa synchronizacja zakończona. Zaktualizowano: $updatedCount")
+                }
+                // Zaplanuj następne uruchomienie
                 syncHandler.postDelayed(syncRunnable, SYNC_INTERVAL_MS)
             }
         }
@@ -68,22 +71,18 @@ class SmsSenderService : Service() {
             .limit(1)
 
         firestoreListener = query.addSnapshotListener { snapshots, e ->
-            if (e != null) {
-                updateNotification("Błąd nasłuchiwania: ${e.message}")
+            if (e != null || snapshots == null || snapshots.isEmpty) {
+                updateNotification("Oczekuję na nowe zlecenia...")
                 return@addSnapshotListener
             }
-            if (snapshots != null && !snapshots.isEmpty) {
-                val jobDocument = snapshots.documents[0]
-                val jobId = jobDocument.id
-                updateNotification("Przetwarzanie zlecenia: $jobId")
+            val jobDocument = snapshots.documents[0]
+            val jobId = jobDocument.id
+            updateNotification("Przetwarzanie zlecenia: $jobId")
 
-                db.collection("smsJobs").document(jobId).update("status", "processing")
-                    .addOnSuccessListener {
-                        prepareAndSendMessages(jobId, jobDocument.get("messages") as? List<Map<String, String>>)
-                    }
-            } else {
-                updateNotification("Oczekuję na nowe zlecenia...")
-            }
+            db.collection("smsJobs").document(jobId).update("status", "processing")
+                .addOnSuccessListener {
+                    prepareAndSendMessages(jobId, jobDocument.get("messages") as? List<Map<String, String>>)
+                }
         }
     }
 
@@ -97,7 +96,7 @@ class SmsSenderService : Service() {
                 "id" to "msg_${System.currentTimeMillis()}_${index}",
                 "phone" to msg["phone"],
                 "message" to msg["message"],
-                "status" to "sending"
+                "status" to "sent" // Ustawiamy od razu status "Wysłano"
             )
         }
         db.collection("smsJobs").document(jobId).update("messages", updatedMessages)
@@ -108,53 +107,21 @@ class SmsSenderService : Service() {
 
     private fun sendAllSms(jobId: String, messages: List<Map<String, String?>>) {
         val smsManager = this.getSystemService(SmsManager::class.java)
-        var requestCodeCounter = System.currentTimeMillis().toInt()
-
-        for ((index, msg) in messages.withIndex()) {
-            val phone = msg["phone"]
-            var messageContent = msg["message"]
-            val messageId = msg["id"]
-
-            if (phone != null && messageContent != null && messageId != null) {
+        for (msg in messages) {
+            val phone = msg["phone"] as? String
+            var messageContent = msg["message"] as? String
+            if (phone != null && messageContent != null) {
                 messageContent = messageContent.replace("&", "\n")
-
-                val parts = smsManager.divideMessage(messageContent)
-                val sentIntents = ArrayList<PendingIntent>()
-                val deliveredIntents = ArrayList<PendingIntent>()
-
-                for (i in parts.indices) {
-                    val sentRequestCode = requestCodeCounter++
-                    val deliveredRequestCode = requestCodeCounter++
-
-                    val sentIntent = Intent(SENT_SMS_ACTION).apply {
-                        setClass(this@SmsSenderService, SmsSentReceiver::class.java)
-                        putExtra("jobId", jobId)
-                        putExtra("messageId", messageId)
-                        data = Uri.parse("smssender://sent/$jobId/$messageId/$i")
-                    }
-                    val deliveredIntent = Intent(DELIVERED_SMS_ACTION).apply {
-                        setClass(this@SmsSenderService, SmsDeliveredReceiver::class.java)
-                        putExtra("jobId", jobId)
-                        putExtra("messageId", messageId)
-                        data = Uri.parse("smssender://delivered/$jobId/$messageId/$i")
-                    }
-
-                    val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_IMMUTABLE else 0
-                    sentIntents.add(PendingIntent.getBroadcast(this, sentRequestCode, sentIntent, flags))
-                    deliveredIntents.add(PendingIntent.getBroadcast(this, deliveredRequestCode, deliveredIntent, flags))
-                }
-
                 try {
-                    smsManager.sendMultipartTextMessage(phone, null, parts, sentIntents, deliveredIntents)
+                    val parts = smsManager.divideMessage(messageContent)
+                    // Wysyłamy bez raportów, polegamy na synchronizacji
+                    smsManager.sendMultipartTextMessage(phone, null, parts, null, null)
                 } catch (ex: Exception) {
                     Log.e("SmsSenderService", "Błąd podczas wysyłania SMS do $phone", ex)
-                    CoroutineScope(Dispatchers.IO).launch {
-                        FirestoreUpdateHelper.updateMessageStatus(jobId, messageId, "error_sending_failed")
-                    }
                 }
             }
         }
-        updateNotification("Wysłano ${messages.size} SMS. Oczekiwanie na raporty...")
+        updateNotification("Wysłano ${messages.size} SMS. Statusy zaktualizują się w tle.")
     }
 
     private fun createNotification(text: String): Notification {

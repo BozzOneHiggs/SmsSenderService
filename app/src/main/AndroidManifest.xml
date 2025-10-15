@@ -36,12 +36,27 @@
             android:foregroundServiceType="dataSync" />
 
         <receiver
-            android:name=".SmsDeliveryReceiver"
-            android:exported="true"
-            tools:ignore="ExportedReceiver">
+            android:name=".SmsSentReceiver"
+            android:exported="false">
             <intent-filter>
-                <action android:name="com.example.smssenderservice.SERVICE_SMS_SENT" />
-                <action android:name="com.example.smssenderservice.SERVICE_SMS_DELIVERED" />
+                <action android:name="com.example.smssenderservice.SMS_SENT" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".SmsDeliveredReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.example.smssenderservice.SMS_DELIVERED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".SmsReceiver"
+            android:exported="false"
+            android:permission="android.permission.BROADCAST_SMS">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.SMS_DELIVER" />
             </intent-filter>
         </receiver>
 

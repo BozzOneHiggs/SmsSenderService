@@ -10,6 +10,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
+const val ACTION_SMS_SENT = "com.example.smssenderservice.SMS_SENT"
+const val ACTION_SMS_DELIVERED = "com.example.smssenderservice.SMS_DELIVERED"
+
 class SmsSentReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
         val jobId = intent?.getStringExtra("jobId")

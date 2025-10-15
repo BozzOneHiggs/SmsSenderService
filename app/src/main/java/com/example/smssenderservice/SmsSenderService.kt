@@ -22,6 +22,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
 
 class SmsSenderService : Service() {
 
@@ -108,6 +109,8 @@ class SmsSenderService : Service() {
                 "id" to "msg_${System.currentTimeMillis()}_${index}",
                 "phone" to msg["phone"],
                 "message" to msg["message"],
+                "person" to msg["person"],
+                "caseNumber" to msg["caseNumber"],
                 "status" to "sent" // Ustawiamy od razu status "Wysłano"
             )
         }
@@ -119,15 +122,53 @@ class SmsSenderService : Service() {
 
     private fun sendAllSms(jobId: String, messages: List<Map<String, String?>>) {
         val smsManager = this.getSystemService(SmsManager::class.java)
+        val pendingIntentFlags = PendingIntent.FLAG_UPDATE_CURRENT or
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
+
         for (msg in messages) {
             val phone = msg["phone"] as? String
+            val messageId = msg["id"] as? String ?: continue
             var messageContent = msg["message"] as? String
+
             if (phone != null && messageContent != null) {
                 messageContent = messageContent.replace("&", "\n")
                 try {
                     val parts = smsManager.divideMessage(messageContent)
-                    // Wysyłamy bez raportów, polegamy na synchronizacji
-                    smsManager.sendMultipartTextMessage(phone, null, parts, null, null)
+                    val sentIntents = ArrayList<PendingIntent>(parts.size)
+                    val deliveredIntents = ArrayList<PendingIntent>(parts.size)
+
+                    for (index in parts.indices) {
+                        val sentIntent = Intent(ACTION_SMS_SENT).apply {
+                            setPackage(packageName)
+                            putExtra("jobId", jobId)
+                            putExtra("messageId", messageId)
+                        }
+                        val deliveredIntent = Intent(ACTION_SMS_DELIVERED).apply {
+                            setPackage(packageName)
+                            putExtra("jobId", jobId)
+                            putExtra("messageId", messageId)
+                        }
+
+                        sentIntents.add(
+                            PendingIntent.getBroadcast(
+                                this,
+                                abs("${messageId}_sent_$index".hashCode()),
+                                sentIntent,
+                                pendingIntentFlags
+                            )
+                        )
+                        deliveredIntents.add(
+                            PendingIntent.getBroadcast(
+                                this,
+                                abs("${messageId}_delivered_$index".hashCode()),
+                                deliveredIntent,
+                                pendingIntentFlags
+                            )
+                        )
+                    }
+
+                    smsManager.sendMultipartTextMessage(phone, null, parts, sentIntents, deliveredIntents)
+                    Log.d("SmsSenderService", "Wysłano SMS ${messageId} do $phone z raportami dostarczenia")
                 } catch (ex: Exception) {
                     Log.e("SmsSenderService", "Błąd podczas wysyłania SMS do $phone", ex)
                 }

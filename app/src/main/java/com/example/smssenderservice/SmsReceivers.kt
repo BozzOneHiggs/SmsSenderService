@@ -20,15 +20,17 @@ class SmsSentReceiver : BroadcastReceiver() {
         if (jobId == null || messageId == null) return
 
         val status = when (resultCode) {
-            Activity.RESULT_OK -> "sent"
-            else -> "error_not_sent"
+            Activity.RESULT_OK -> MessageSendStatus.SENT
+            else -> MessageSendStatus.ERROR
         }
-        Log.d("SmsSentReceiver", "Odebrano raport WYSŁANIA dla $messageId. Status: $status, Kod: $resultCode")
+        Log.d("SmsSentReceiver", "Odebrano raport WYSŁANIA dla $messageId. Status: ${status.name}, Kod: $resultCode")
 
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                FirestoreUpdateHelper.updateMessageStatus(jobId, messageId, status)
+                context?.let {
+                    SentMessagesRepository.updateStatus(it, messageId, status)
+                }
             } finally {
                 pendingResult.finish()
             }
@@ -42,17 +44,7 @@ class SmsDeliveredReceiver : BroadcastReceiver() {
         val messageId = intent?.getStringExtra("messageId")
         if (jobId == null || messageId == null) return
 
-        Log.d("SmsDeliveredReceiver", "Odebrano raport DOSTARCZENIA dla $messageId. Raport jest w 100% wiarygodny.")
-
-        val pendingResult = goAsync()
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                // Status "delivered" jest teraz pewny, bo jesteśmy domyślną aplikacją
-                FirestoreUpdateHelper.updateMessageStatus(jobId, messageId, "delivered", true)
-            } finally {
-                pendingResult.finish()
-            }
-        }
+        Log.d("SmsDeliveredReceiver", "Odebrano raport DOSTARCZENIA dla $messageId. Raport ignorowany zgodnie z konfiguracją.")
     }
 }
 

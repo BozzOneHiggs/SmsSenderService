@@ -1,5 +1,19 @@
 <resources>
     <string name="app_name">SmsSenderService</string>
-    <string name="firebase_custom_token">SET_YOUR_CUSTOM_TOKEN_HERE</string>
+    <string name="firebase_custom_token">eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJmaXJlYmFzZS1hZG1pbnNkay1mYnN2Y0BzbXMtc2VuZGVyLWFwcC1iMWY5NC5pYW0uZ3NlcnZpY2VhY2NvdW50LmNvbSIsInN1YiI6ImZpcmViYXNlLWFkbWluc2RrLWZic3ZjQHNtcy1zZW5kZXItYXBwLWIxZjk0LmlhbS5nc2VydmljZWFjY291bnQuY29tIiwiYXVkIjoiaHR0cHM6Ly9pZGVudGl0eXRvb2xraXQuZ29vZ2xlYXBpcy5jb20vZ29vZ2xlLmlkZW50aXR5LmlkZW50aXR5dG9vbGtpdC52MS5JZGVudGl0eVRvb2xraXQiLCJpYXQiOjE3MzA2NDQ4MDAsImV4cCI6MTczMDY0ODQwMCwidWlkIjoic21zc2VydmVyIn0.Abh_DQK1iLi4DwqzCw04iWx_tkQVPaYItJRcijBgWTpO_y48WErJOKyAuUlIfWJ4DLChV8Awnz2GXFIpVtxACcQoygHp9AbCzt9_aad59IwZQ1tClvgQM6thvksQdVU9F20RU87yzfZnRrbRjy5KhNKh7OUo_D_RtGkpx6WrrGXQ7qrndGQQ2hmranZYx2pfKgJSoj_sDYpWP-Z-Mz735bAvWmvd0HuyRVVhu33iPjMk4jkDsm-pAM1QYOMFBpvCBmknz9fgdMrae93VHKaL5xVGRNTrSNefUD_5BNoP_DGpjmh_q0F3XsmCjczPgSxdR60qR40AZI3HMIAb7xco7w</string>
     <string name="auth_error_message">Błąd autoryzacji z Firebase. Sprawdź konfigurację tokenu.</string>
+    <string name="permissions_granted_message">Wszystkie wymagane uprawnienia zostały nadane. Usługa działa w tle.</string>
+    <string name="permissions_missing_message">Aby rozpocząć wysyłkę SMS, nadaj wymagane uprawnienia.</string>
+    <string name="grant_permissions_button">Nadaj uprawnienia</string>
+    <string name="recent_shipments_header">Ostatnie wysyłki</string>
+    <string name="message_preview_title">Podgląd wiadomości</string>
+    <string name="message_preview_placeholder">Wybierz numer z listy, aby zobaczyć wysłaną treść.</string>
+    <string name="message_preview_for_number">Wiadomość do %1$s</string>
+    <string name="empty_shipments_placeholder">Brak zarejestrowanych wysyłek. Wyślij pierwszą wiadomość, aby zobaczyć historię.</string>
+    <string name="status_pending_label">Wysyłanie…</string>
+    <string name="status_sent_label">Wysłano</string>
+    <string name="status_error_label">Błąd wysyłki</string>
+    <string name="unknown_number_placeholder">(brak numeru)</string>
+    <string name="manual_permission_guidance">Niektóre uprawnienia zostały trwale odrzucone. Musisz je nadać ręcznie w ustawieniach aplikacji.</string>
+    <string name="open_app_settings_button">Otwórz ustawienia aplikacji</string>
 </resources>

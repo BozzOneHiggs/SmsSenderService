@@ -7,35 +7,71 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
-import android.util.Log
-import android.widget.Button
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.IntentFilter
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import androidx.recyclerview.widget.DividerItemDecoration
+import androidx.recyclerview.widget.LinearLayoutManager
 
 class MainActivity : AppCompatActivity() {
 
     private val PERMISSION_CODE = 101
     private lateinit var statusTextView: TextView
-    private lateinit var actionButton: Button
+    private lateinit var permissionButton: com.google.android.material.button.MaterialButton
+    private lateinit var emptyStateTextView: TextView
+    private lateinit var previewTitle: TextView
+    private lateinit var previewTimestamp: TextView
+    private lateinit var previewContent: TextView
+    private lateinit var messagesAdapter: SentMessageAdapter
+    private var logReceiverRegistered = false
+
+    private val logUpdatedReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            refreshMessageList()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
         statusTextView = findViewById(R.id.statusTextView)
-        actionButton = findViewById(R.id.syncButton)
+        permissionButton = findViewById(R.id.permissionButton)
+        emptyStateTextView = findViewById(R.id.emptyStateTextView)
+        previewTitle = findViewById(R.id.messagePreviewTitle)
+        previewTimestamp = findViewById(R.id.messagePreviewTimestamp)
+        previewContent = findViewById(R.id.messagePreviewContent)
+
+        val recyclerView = findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.sentMessagesRecyclerView)
+        messagesAdapter = SentMessageAdapter { messageInfo ->
+            showMessagePreview(messageInfo)
+        }
+        recyclerView.apply {
+            layoutManager = LinearLayoutManager(this@MainActivity)
+            adapter = messagesAdapter
+            addItemDecoration(DividerItemDecoration(context, DividerItemDecoration.VERTICAL))
+        }
+
+        permissionButton.setOnClickListener { checkPermissionsAndStartService() }
+
+        refreshMessageList()
+        clearMessagePreview()
     }
 
     override fun onResume() {
         super.onResume()
         updateUiBasedOnPermissions()
+        registerLogReceiver()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        unregisterLogReceiver()
     }
 
     private fun getRequiredPermissions(): List<String> {
@@ -57,39 +93,16 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateUiBasedOnPermissions() {
         if (allPermissionsGranted()) {
-            statusTextView.text = "Wszystkie uprawnienia nadane. Usługa w tle jest aktywna."
-            actionButton.text = "Synchronizuj statusy ręcznie"
-            actionButton.setOnClickListener {
-                statusTextView.text = "Rozpoczynam ręczną synchronizację..."
-                actionButton.isEnabled = false
-                CoroutineScope(Dispatchers.IO).launch {
-                    try {
-                        val firestore = FirebaseAuthManager.ensureSignedInWithCustomToken(this@MainActivity)
-                        SmsStatusSyncer.sync(this@MainActivity, firestore) { updatedCount ->
-                            runOnUiThread {
-                                statusTextView.text = "Synchronizacja zakończona. Zaktualizowano $updatedCount statusów."
-                                actionButton.isEnabled = true
-                            }
-                        }
-                    } catch (ex: Exception) {
-                        Log.e("MainActivity", "Błąd podczas ręcznej synchronizacji", ex)
-                        withContext(Dispatchers.Main) {
-                            statusTextView.text = getString(R.string.auth_error_message)
-                            actionButton.isEnabled = true
-                            Toast.makeText(
-                                this@MainActivity,
-                                getString(R.string.auth_error_message),
-                                Toast.LENGTH_LONG
-                            ).show()
-                        }
-                    }
-                }
-            }
+            statusTextView.text = getString(R.string.permissions_granted_message)
+            permissionButton.visibility = android.view.View.GONE
             startSmsService()
         } else {
-            statusTextView.text = "Aplikacja wymaga dodatkowych uprawnień do działania."
-            actionButton.text = "Nadaj uprawnienia"
-            actionButton.setOnClickListener { checkPermissionsAndStartService() }
+            statusTextView.text = getString(R.string.permissions_missing_message)
+            permissionButton.apply {
+                visibility = android.view.View.VISIBLE
+                isEnabled = true
+                text = getString(R.string.grant_permissions_button)
+            }
         }
     }
 
@@ -120,9 +133,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showManualPermissionGuidance() {
-        statusTextView.text = "Niektóre uprawnienia zostały trwale odrzucone. Musisz je nadać ręcznie w ustawieniach aplikacji."
-        actionButton.text = "Otwórz ustawienia aplikacji"
-        actionButton.setOnClickListener { openAppSettings() }
+        statusTextView.text = getString(R.string.manual_permission_guidance)
+        permissionButton.apply {
+            visibility = android.view.View.VISIBLE
+            text = getString(R.string.open_app_settings_button)
+            setOnClickListener { openAppSettings() }
+        }
     }
 
     private fun openAppSettings() {
@@ -140,5 +156,48 @@ class MainActivity : AppCompatActivity() {
             startService(serviceIntent)
         }
         Toast.makeText(this, "Usługa SMS w tle jest aktywna", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun refreshMessageList() {
+        val messages = SentMessagesRepository.getMessages(this)
+        messagesAdapter.submitList(messages)
+        if (messages.isEmpty()) {
+            emptyStateTextView.visibility = android.view.View.VISIBLE
+            clearMessagePreview()
+        } else {
+            emptyStateTextView.visibility = android.view.View.GONE
+        }
+    }
+
+    private fun showMessagePreview(messageInfo: SentMessageInfo) {
+        previewTitle.text = getString(R.string.message_preview_for_number, messageInfo.phoneNumber)
+        previewTimestamp.text = SentMessagesRepository.formatTimestamp(messageInfo.timestamp)
+        previewContent.text = messageInfo.messageBody
+    }
+
+    private fun clearMessagePreview() {
+        previewTitle.text = getString(R.string.message_preview_title)
+        previewTimestamp.text = ""
+        previewContent.text = getString(R.string.message_preview_placeholder)
+    }
+
+    private fun registerLogReceiver() {
+        if (!logReceiverRegistered) {
+            val filter = IntentFilter(ACTION_MESSAGE_LOG_UPDATED)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(logUpdatedReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                @Suppress("DEPRECATION")
+                registerReceiver(logUpdatedReceiver, filter)
+            }
+            logReceiverRegistered = true
+        }
+    }
+
+    private fun unregisterLogReceiver() {
+        if (logReceiverRegistered) {
+            unregisterReceiver(logUpdatedReceiver)
+            logReceiverRegistered = false
+        }
     }
 }

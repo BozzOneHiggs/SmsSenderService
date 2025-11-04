@@ -8,9 +8,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import android.os.Handler
 import android.os.IBinder
-import android.os.Looper
 import android.telephony.SmsManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -30,17 +28,12 @@ class SmsSenderService : Service() {
     private var firestoreListener: ListenerRegistration? = null
     private val NOTIFICATION_CHANNEL_ID = "SmsSenderServiceChannel"
 
-    private val syncHandler = Handler(Looper.getMainLooper())
-    private lateinit var syncRunnable: Runnable
-    private val SYNC_INTERVAL_MS = 60000L // Synchronizuj co 60 sekund
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(serviceJob + Dispatchers.Main.immediate)
-    private var isSyncScheduled = false
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        setupPeriodicSync()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -50,25 +43,6 @@ class SmsSenderService : Service() {
             authenticateAndStartWork()
         }
         return START_STICKY
-    }
-
-    private fun setupPeriodicSync() {
-        syncRunnable = Runnable {
-            if (!::db.isInitialized) {
-                Log.w("SmsSenderService", "Brak instancji Firestore – pomijam synchronizację.")
-                syncHandler.postDelayed(syncRunnable, SYNC_INTERVAL_MS)
-                return@Runnable
-            }
-            // Uruchom synchronizację w tle, aby nie blokować głównego wątku
-            serviceScope.launch(Dispatchers.IO) {
-                Log.d("SmsSenderService", "Uruchamiam okresową synchronizację statusów...")
-                SmsStatusSyncer.sync(this@SmsSenderService, db) { updatedCount ->
-                    Log.d("SmsSenderService", "Okresowa synchronizacja zakończona. Zaktualizowano: $updatedCount")
-                }
-                // Zaplanuj następne uruchomienie
-                syncHandler.postDelayed(syncRunnable, SYNC_INTERVAL_MS)
-            }
-        }
     }
 
     private fun listenForSmsJobs() {
@@ -168,9 +142,25 @@ class SmsSenderService : Service() {
                     }
 
                     smsManager.sendMultipartTextMessage(phone, null, parts, sentIntents, deliveredIntents)
+                    val info = SentMessageInfo(
+                        messageId = messageId,
+                        phoneNumber = phone,
+                        messageBody = messageContent,
+                        timestamp = System.currentTimeMillis(),
+                        status = MessageSendStatus.PENDING
+                    )
+                    SentMessagesRepository.recordSendingAttempt(applicationContext, info)
                     Log.d("SmsSenderService", "Wysłano SMS ${messageId} do $phone z raportami dostarczenia")
                 } catch (ex: Exception) {
                     Log.e("SmsSenderService", "Błąd podczas wysyłania SMS do $phone", ex)
+                    val info = SentMessageInfo(
+                        messageId = messageId,
+                        phoneNumber = phone ?: "",
+                        messageBody = messageContent ?: "",
+                        timestamp = System.currentTimeMillis(),
+                        status = MessageSendStatus.ERROR
+                    )
+                    SentMessagesRepository.recordSendingAttempt(applicationContext, info)
                 }
             }
         }
@@ -212,8 +202,6 @@ class SmsSenderService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         firestoreListener?.remove()
-        syncHandler.removeCallbacks(syncRunnable)
-        isSyncScheduled = false
         serviceJob.cancel()
     }
 
@@ -230,10 +218,6 @@ class SmsSenderService : Service() {
                 db = firestore
             }
             listenForSmsJobs()
-            if (!isSyncScheduled) {
-                syncHandler.post(syncRunnable)
-                isSyncScheduled = true
-            }
         } catch (ex: Exception) {
             Log.e("SmsSenderService", "Błąd autoryzacji Firebase", ex)
             updateNotification(getString(R.string.auth_error_message))

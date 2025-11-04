@@ -9,10 +9,20 @@
       "client_info": {
         "mobilesdk_app_id": "1:546650011330:android:16566e36cda804a654ad5b",
         "android_client_info": {
-          "package_name": "com.example.smssenderservice"
+          "package_name": "com.example.smssenderservice",
+          "certificate_hash": [
+            {
+              "sha1": "2B:35:42:43:4E:CB:46:1A:E3:0E:6C:03:73:86:65:50:01:27:B9:EE"
+            }
+          ]
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "546650011330-k1vad33m2v22p13rq5gbrsn538d3jfqm.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyDb8UYltXjVOSp-X8W4q-UVizixHJdKI8M"

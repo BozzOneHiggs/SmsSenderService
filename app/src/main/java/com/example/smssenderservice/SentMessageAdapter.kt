@@ -45,6 +45,7 @@ class SentMessageAdapter(
             val colorRes = when (status) {
                 MessageSendStatus.PENDING -> R.color.status_pending
                 MessageSendStatus.SENT -> R.color.status_sent
+                MessageSendStatus.DELIVERED -> R.color.status_delivered
                 MessageSendStatus.ERROR -> R.color.status_error
             }
             return ContextCompat.getColor(context, colorRes)

@@ -50,7 +50,6 @@
                 <action android:name="com.example.smssenderservice.SMS_DELIVERED" />
             </intent-filter>
         </receiver>
-
         <receiver
             android:name=".SmsReceiver"
             android:exported="false"
